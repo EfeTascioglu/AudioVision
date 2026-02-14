@@ -1,0 +1,16 @@
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+
+# SSL certificates
+*.pem
+localhost-cert.pem
+localhost-key.pem
+
+# macOS
+.DS_Store
+
+# Whisper streaming -> ignore this stuff since this was testing out a different api
+audio_transcription/whisper_streaming/
