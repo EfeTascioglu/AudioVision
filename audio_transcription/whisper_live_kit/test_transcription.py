@@ -20,6 +20,10 @@ logger.setLevel(logging.DEBUG)
 args = parse_args()
 transcription_engine = None
 
+# Store connected Quest clients in quest_CLIENTS
+quest_clients: Set[WebSocket] = set()
+
+# Setting up transcription engine so it gets the user inputted arguments
 @asynccontextmanager
 async def lifespan(app: FastAPI):    
     global transcription_engine
@@ -40,6 +44,7 @@ app.add_middleware(
 @app.get("/")
 async def get():
     return HTMLResponse(get_inline_ui_html())
+
 
 
 async def handle_websocket_results(websocket, results_generator):
@@ -122,7 +127,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
     try:
         while True:
-            message = await websocket.receive_bytes()
+            message = await websocket.receive_bytes() # wait to receive raw audio byte streams
             await audio_processor.process_audio(message)
     except KeyError as e:
         if 'bytes' in str(e):
@@ -159,7 +164,7 @@ def main():
     print("="*60)
     
     uvicorn_kwargs = {
-        "app": "quest_transcription:app",
+        "app": "test_transcription:app",
         "host": args.host, 
         "port": args.port, 
         "reload": False,
