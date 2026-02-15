@@ -8,6 +8,7 @@ import numpy as np
 from typing import Tuple, Optional, Union
 
 from audio_util import visualize_waveforms
+import pdb
 
 
 def CSP(
@@ -120,8 +121,7 @@ def find_delay(
 
     # Zero-pad to 2*window_len so IFFT gives full linear correlation (positive and negative lags)
     n_fft = 2 * window_len
-    delays: list[int] = []
-    peak_strengths: list[float] = []
+    avg_corrs = np.zeros(n_fft)
 
     for start in range(0, n - window_len + 1, step):
         w_a = a[start : start + window_len] * win
@@ -132,17 +132,16 @@ def find_delay(
         cross_power, _ = CSP(w_a_pad, w_b_pad, fs=44200, use_phase_only=use_phase_only)
         # cross_power length is n_fft//2 + 1; irfft gives n_fft samples
         corr = np.fft.irfft(cross_power, n=n_fft)
-        # irfft: index 0..window_len = lags 0..window_len; index window_len+1..n_fft-1 = negative lags
-        lag_idx = int(np.argmax(np.abs(corr)))
-        lag_samp = lag_idx if lag_idx <= window_len else lag_idx - n_fft
-        # Delay of b relative to a: positive when b is delayed (same content appears later in b)
-        delay_samp = -lag_samp
-        delays.append(delay_samp)
-        peak_strengths.append(float(np.abs(corr[lag_idx])))
+        avg_corrs += np.abs(corr)
 
-    # Return delay that maximizes aggregate confidence: use the delay from the window with strongest peak
-    best_i = int(np.argmax(peak_strengths))
-    delay_samples = delays[best_i]
+
+    reordered_avg_corrs = np.zeros(n_fft)
+    reordered_avg_corrs[:window_len] = avg_corrs[window_len:]
+    reordered_avg_corrs[window_len:] = avg_corrs[:window_len]
+    max_delay = 15
+
+    lag_idx = int(np.argmax(reordered_avg_corrs[window_len-max_delay:window_len+max_delay+1])) - max_delay # Symetric around 0
+    delay_samples = -lag_idx
 
     delay_seconds = delay_samples / fs
 

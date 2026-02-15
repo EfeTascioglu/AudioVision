@@ -24,3 +24,4 @@ __pycache__/
 *.pidb
 *.booproj
 *.sln.DotSettings*
+*.wav
