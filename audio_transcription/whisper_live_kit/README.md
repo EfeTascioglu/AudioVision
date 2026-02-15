@@ -20,7 +20,7 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install whisperlivekit fastapi uvicorn websockets
 ```
 
-### 3. Generate SSL Certificates
+### 3. (OPTIONAL -> Required for testing mic w/ HTTPS) Generate SSL Certificates
 
 SSL certificates are required for browser microphone access. Generate self-signed certificates for localhost:
 ```bash
@@ -37,9 +37,13 @@ This creates:
 
 **Note:** These files are gitignored and must be generated locally.
 
-## Running the Server
+## 
+
+
+
+## Testing w/ HTTPS Web Browser
 ```bash
-python quest_transcription.py --host 0.0.0.0 --port 8000 --ssl-certfile localhost-cert.pem --ssl-keyfile localhost-key.pem
+python test_transcription.py --host 0.0.0.0 --port 8000 --ssl-certfile localhost-cert.pem --ssl-keyfile localhost-key.pem
 ```
 
 The server will start on `https://localhost:8000`
@@ -135,7 +139,7 @@ Additional command-line arguments:
 
 ### Example with Options
 ```bash
-python quest_transcription.py \
+python test_transcription.py \
   --host 0.0.0.0 \
   --port 8000 \
   --ssl-certfile localhost-cert.pem \
@@ -174,7 +178,8 @@ If you see SSL certificate warnings in your browser:
 ## Project Structure
 ```
 .
-├── quest_transcription.py   # Main server file
+├── test_transcription.py           # Test server file
+├── audio_quest_transcription.py    # Main file
 ├── localhost-cert.pem        # SSL certificate (gitignored)
 ├── localhost-key.pem         # SSL private key (gitignored)
 ├── .gitignore
