@@ -12,5 +12,15 @@ localhost-key.pem
 
 # Whisper streaming -> ignore this stuff since this was testing out a different api
 audio_transcription/whisper_streaming/
+
 __pycache__/
 .DS_store
+*.sln
+*.csproj
+*.unityproj
+*.suo
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.sln.DotSettings*
