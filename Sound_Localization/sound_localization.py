@@ -151,7 +151,7 @@ def find_delay(
 def fake_audio_stream_test(delay=8) -> None:
     """Generate a single source, two delayed+noisy streams, and estimate delay with find_delay."""
     rng = np.random.default_rng(42)
-    fs = 44200
+    fs = 48000
     duration_sec = 2.0
     n_total = int(fs * duration_sec)
 
@@ -182,7 +182,7 @@ def fake_audio_stream_test(delay=8) -> None:
 
     visualize_waveforms(stream_a, stream_b, fs=fs)
 
-    window_len = 4420  # 100ms
+    window_len = 4800  # 100ms
     delay_samples, delay_seconds = find_delay(
         stream_a, stream_b, window_len=window_len, step=window_len//2, fs=fs, use_phase_only=True
     )

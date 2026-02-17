@@ -9,7 +9,7 @@ from sound_localization import CSP, find_delay
 
 def fake_audio_stream_test(delay: int = 8) -> None:
     rng = np.random.default_rng(42)
-    fs = 44200
+    fs = 48000
     duration_sec = 2.0
     n_total = int(fs * duration_sec)
 

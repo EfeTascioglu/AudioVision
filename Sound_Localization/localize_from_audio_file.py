@@ -77,5 +77,5 @@ def main(wav_path: str) -> None:
 
 if __name__ == "__main__":
     import sys
-    #main("test_audio_sterio_tilted.wav")
-    test_from_mono_audio("test_audio.wav")
+    main("audio_2026-02-17T21-29-06-927Z.wav")
+    #test_from_mono_audio("test_audio.wav")
