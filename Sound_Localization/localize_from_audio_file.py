@@ -8,7 +8,7 @@ import pdb
 
 
 def test_from_mono_audio(
-    wav_path: str, delay_a: int = 0, delay_b: int = 0, delay_c: int = 5, noise_scale: float = 0.05
+    wav_path: str, delay_a: int = 3, delay_b: int = 0, delay_c: int = 5, noise_scale: float = 0.05
 ) -> None:
     fs, data = wavfile.read(wav_path)
     source = np.asarray(data, dtype=np.float64)
@@ -42,10 +42,11 @@ def test_from_mono_audio(
         tdoa_sec.append(delay_sec)
         print(f"True delay: {d} samples ({d / fs * 1000:.2f} ms)  Est: {delay_samp} samples ({delay_sec * 1000:.2f} ms)")
     #pos = tdoa_using_ls_2D(np.array(tdoa_sec))
-    pos = tdoa_using_ls(np.array(tdoa_sec))
-    #pos, similarity = tdoa_using_grid_search(np.array(tdoa_sec))
+    # pos = tdoa_using_ls(np.array(tdoa_sec))
+    pos, similarity = tdoa_using_grid_search(np.array(tdoa_sec))
 
-    print(f"Source position (m): {pos[0]:.4f}, {pos[1]:.4f}, {pos[2]:.4f}")
+    print(f"Source position (m): {float(pos[0]):.4f}, {float(pos[1]):.4f}, {float(pos[2]):.4f}")
+    print(f"Similarity: {similarity:.4f}")
 
 
 def main(wav_path: str) -> None:
@@ -68,11 +69,13 @@ def main(wav_path: str) -> None:
         tdoa_sec.append(delay_sec)
         print(f"Ch {i}–{i + 1}: {delay_samp} samples ({delay_sec * 1000:.2f} ms)")
     if len(channels) == 3 and len(tdoa_sec) == 2:
-        pos = tdoa_using_ls(np.array(tdoa_sec))
-        print(f"Source position (m): {pos}")
+        #pos = tdoa_using_ls(np.array(tdoa_sec))
+        pos, similarity = tdoa_using_grid_search(np.array(tdoa_sec))
+        print(f"Source position (m): {float(pos[0]):.4f}, {float(pos[1]):.4f}, {float(pos[2]):.4f}")
+        print(f"Similarity: {similarity:.4f}")
 
 
 if __name__ == "__main__":
     import sys
-    #main("test_audio_sterio_tilted.wav")
-    test_from_mono_audio("test_audio.wav")
+    main("audio_2026-02-17T21-29-06-927Z.wav")
+    #test_from_mono_audio("test_audio.wav")

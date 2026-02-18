@@ -165,6 +165,12 @@ quest_clients: Set[WebSocket] = set()
 @asynccontextmanager
 async def lifespan(app: FastAPI):    
     global transcription_engine
+
+    # Override specific args before passing to TranscriptionEngine
+    args.model = "base"
+    args.lan = "en"
+    args.diarization = True
+
     transcription_engine = TranscriptionEngine(
         **vars(args),
     )
@@ -424,8 +430,9 @@ def main():
     print("="*60)
     print("TRANSCRIPTION SERVER")
     print("="*60)
-    print(f"Backend: {args.backend}")
-    print(f"Model: {args.model}")
+    print(f"Model: base")          # hardcoded
+    print(f"Language: en")         # hardcoded  
+    print(f"Diarization: True")    # hardcoded
     print(f"Host: {args.host}:{args.port}")
     print("")
     print("ENDPOINTS:")
