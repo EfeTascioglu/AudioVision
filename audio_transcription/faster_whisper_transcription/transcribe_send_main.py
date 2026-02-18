@@ -1,4 +1,3 @@
-
 import asyncio
 import logging
 from pathlib import Path
@@ -19,6 +18,7 @@ from Sound_Localization.localize_from_audio_file import main as localization_mai
 
 from faster_whisper import WhisperModel
 
+import websockets
 
 # -----------------------------
 #  Logging
@@ -92,53 +92,59 @@ def initilaize_model() -> WhisperModel:
     model = WhisperModel("small", device="cpu", compute_type="int8") 
     return model 
 
+queue = asyncio.Queue()
 
-def main():
-    '''
-    Breakdown
-    1. Init the whisper model
-    2. Check a certain directory to see if there are any .wav files inside of it
-    3. pick the oldest one, and generate a .raw file from it
-    4. Reshape the raw and feed it to localization_main
-    5. Using the original .wav feed that into whisper_model.transcribe
-    6. Format the transcription and localizaiton vector together in a json to send 
-    7. Repeat from step 2
-    '''
 
-    ## 1. Initialize the whisper model
-    whisper_model = initilaize_model()
-
-    directory = "./wav_queue"
-
-    while True: # infinite loop of checking for WAV files
+async def process_wavs(whisper_model, directory: str):
+    while True:
         wav_path = get_oldest_wav(directory)
         if not wav_path:
-            print("No more WAV files in directory. Waiting...")
-            import time
-            time.sleep(1) # NOTE: will probably have to make this smaller 
+            await asyncio.sleep(0.5)  # non-blocking sleep
             continue
-    
+        
         print(f"Processing: {wav_path}")
 
-        ## 2. Convert to wav to raw (so it can handle 3 channels)
+        ## 1. Convert to raw
         data, fs = convert_wav_to_raw(wav_path)
 
-        ## 3. Run localization
-        localization_vector = localization_main(data, fs) 
+        ## 2. Run localization
+        localization_vector = localization_main(data, fs)
         print(f"Localization vector: {localization_vector}")
 
-        ## 4. Run Transcription
+        ## 3. Run transcription
         segments, info = whisper_model.transcribe(wav_path)
+        segments = list(segments)  # materialize generator
 
-        ## 5. Format as JSON (for Quest)
+        ## 4. Format JSON
         output_json = format_output(localization_vector, segments)
         print(f"Output JSON: \n{output_json}")
 
-        ## 6. Delete Processed file
+        ## 5. Push JSON to the queue for WebSocket
+        await queue.put(output_json)
+
+        ## 6. Delete processed file
         os.remove(wav_path)
         print(f"Deleted: {wav_path} \n")
 
 
+async def ws_handler(websocket, path):
+    while True:
+        # Wait for new JSON from queue
+        output_json = await queue.get()
+        await websocket.send(output_json)
+
+
+async def main_async():
+    whisper_model = initilaize_model()
+    directory = "./wav_queue"
+
+    # Run WAV processing and WebSocket server concurrently
+    server = websockets.serve(ws_handler, "0.0.0.0", 8765)
+
+    await asyncio.gather(
+        process_wavs(whisper_model, directory),
+        server
+    )
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main_async())

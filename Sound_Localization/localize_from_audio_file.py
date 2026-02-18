@@ -58,7 +58,6 @@ def test_from_mono_audio(
 def main(data, fs) -> None:
     print(f"Running localize from audio \n")
 
-    import soundfile as sf
     #info = sf.info(wav_path)
     #print(info)
     #data, fs = sf.read(wav_path, always_2d=True)
