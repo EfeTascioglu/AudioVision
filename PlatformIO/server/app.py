@@ -336,19 +336,19 @@ def _validate_and_strip_channel_tags(data: bytes) -> tuple: # TODO: Look into ma
         playback_speed_ratio = expected_duration_sec / actual_duration_sec if actual_duration_sec > 0 else float('inf')
         
         # Log diagnostics
-        print(f"\n[FRAME VALIDATION]")
-        print(f"  Input: {input_frame_count} frames ({input_bytes} bytes)")
-        print(f"  Output: {output_frame_count} frames ({output_bytes} bytes)")
-        print(f"  Retention: {retention_ratio*100:.1f}%")
-        print(f"  First frame position: sample {first_frame_position} (skipped {frames_skipped_finding_first} frames)")
-        print(f"  Stop reason: {stop_reason} (remaining frames skipped: {frames_skipped_processing})")
-        print(f"\n[PLAYBACK ANALYSIS]")
-        print(f"  Expected duration: {expected_duration_sec:.4f} sec ({input_frame_count} frames @ 48kHz)")
-        print(f"  Actual duration:   {actual_duration_sec:.4f} sec ({output_frame_count} frames @ 48kHz)")
-        print(f"  Playback speed ratio: {playback_speed_ratio:.2f}x (1.0 = normal, 2.0 = double-speed)")
-        print(f"\n[TIMING SEQUENCE]")
-        print(f"  Timing indices: {timing_str}...")
-        print(f"  Channels: {channel_str}...")
+        # print(f"\n[FRAME VALIDATION]")
+        # print(f"  Input: {input_frame_count} frames ({input_bytes} bytes)")
+        # print(f"  Output: {output_frame_count} frames ({output_bytes} bytes)")
+        # print(f"  Retention: {retention_ratio*100:.1f}%")
+        # print(f"  First frame position: sample {first_frame_position} (skipped {frames_skipped_finding_first} frames)")
+        # print(f"  Stop reason: {stop_reason} (remaining frames skipped: {frames_skipped_processing})")
+        # print(f"\n[PLAYBACK ANALYSIS]")
+        # print(f"  Expected duration: {expected_duration_sec:.4f} sec ({input_frame_count} frames @ 48kHz)")
+        # print(f"  Actual duration:   {actual_duration_sec:.4f} sec ({output_frame_count} frames @ 48kHz)")
+        # print(f"  Playback speed ratio: {playback_speed_ratio:.2f}x (1.0 = normal, 2.0 = double-speed)")
+        # print(f"\n[TIMING SEQUENCE]")
+        # print(f"  Timing indices: {timing_str}...")
+        # print(f"  Channels: {channel_str}...")
         
         # Stack kept frames and clear both tag bits (1-2) and timing index bits (3-5)
         kept_samples = np.array(kept_frames)
@@ -443,81 +443,81 @@ def udp_receiver_combined(port: int = 30000):
             packet_size = len(data)
             
             if packet_size > 0:
-                # ===== RAW UDP SOCKET BYTE LOGGING (NO PROCESSING YET) =====
-                print(f"\n[RAW UDP] Received {packet_size} bytes from {addr[0]}:{addr[1]}")
+                # # ===== RAW UDP SOCKET BYTE LOGGING (NO PROCESSING YET) =====
+                # print(f"\n[RAW UDP] Received {packet_size} bytes from {addr[0]}:{addr[1]}")
                 
-                # Show hex dump of first 48 bytes (12 samples)
-                hex_dump = data[:48].hex()
-                hex_formatted = ' '.join([hex_dump[i:i+2] for i in range(0, len(hex_dump), 2)])
-                print(f"[RAW HEX] {hex_formatted}...")
+                # # Show hex dump of first 48 bytes (12 samples)
+                # hex_dump = data[:48].hex()
+                # hex_formatted = ' '.join([hex_dump[i:i+2] for i in range(0, len(hex_dump), 2)])
+                # print(f"[RAW HEX] {hex_formatted}...")
                 
-                # Show decimal of first 12 bytes (3 samples)
-                decimal_vals = list(data[:12])
-                print(f"[RAW DEC] {decimal_vals}")
+                # # Show decimal of first 12 bytes (3 samples)
+                # decimal_vals = list(data[:12])
+                # print(f"[RAW DEC] {decimal_vals}")
                 
-                # Parse and show first 3 samples (1 frame) with channel tags and timing index
-                if packet_size >= 12:
-                    samples = []
-                    for i in range(3):
-                        byte_offset = i * 4
-                        # Little-endian 32-bit signed integer
-                        sample_bytes = data[byte_offset:byte_offset+4]
-                        sample = int.from_bytes(sample_bytes, byteorder='little', signed=True)
-                        channel_tag = (sample >> 1) & 0x3  # Extract bits 1-2
-                        timing_idx = (sample >> 3) & 0x7   # Extract bits 3-5
-                        samples.append((sample, channel_tag, timing_idx))
+                # # Parse and show first 3 samples (1 frame) with channel tags and timing index
+                # if packet_size >= 12:
+                #     samples = []
+                #     for i in range(3):
+                #         byte_offset = i * 4
+                #         # Little-endian 32-bit signed integer
+                #         sample_bytes = data[byte_offset:byte_offset+4]
+                #         sample = int.from_bytes(sample_bytes, byteorder='little', signed=True)
+                #         channel_tag = (sample >> 1) & 0x3  # Extract bits 1-2
+                #         timing_idx = (sample >> 3) & 0x7   # Extract bits 3-5
+                #         samples.append((sample, channel_tag, timing_idx))
                     
-                    tag_names = {0: "L", 1: "R", 2: "C", 3: "?"}
-                    print(f"[FRAME 0] Sam0: tag={tag_names[samples[0][1]]}, timing={samples[0][2]}, raw=0x{samples[0][0]:08x}")
-                    print(f"[FRAME 0] Sam1: tag={tag_names[samples[1][1]]}, timing={samples[1][2]}, raw=0x{samples[1][0]:08x}")
-                    print(f"[FRAME 0] Sam2: tag={tag_names[samples[2][1]]}, timing={samples[2][2]}, raw=0x{samples[2][0]:08x}")
+                #     tag_names = {0: "L", 1: "R", 2: "C", 3: "?"}
+                #     print(f"[FRAME 0] Sam0: tag={tag_names[samples[0][1]]}, timing={samples[0][2]}, raw=0x{samples[0][0]:08x}")
+                #     print(f"[FRAME 0] Sam1: tag={tag_names[samples[1][1]]}, timing={samples[1][2]}, raw=0x{samples[1][0]:08x}")
+                #     print(f"[FRAME 0] Sam2: tag={tag_names[samples[2][1]]}, timing={samples[2][2]}, raw=0x{samples[2][0]:08x}")
                     
-                # Expected frame count
-                expected_frames = packet_size // 12
-                print(f"[PKT INFO] Packet size: {packet_size} bytes → {expected_frames} frames (TODO: validate after tagging)")
-                # ===== END RAW LOGGING =====
+                # # Expected frame count
+                # expected_frames = packet_size // 12
+                # print(f"[PKT INFO] Packet size: {packet_size} bytes → {expected_frames} frames (TODO: validate after tagging)")
+                # # ===== END RAW LOGGING =====
                 
-                # ===== EXTRACT AND LOG CHANNEL TAG SEQUENCE =====
-                # Show which mics are in the packet in order (before validation strips tags)
-                tag_sequence = []
-                tag_names = {0: "L", 1: "R", 2: "C"}
+                # # ===== EXTRACT AND LOG CHANNEL TAG SEQUENCE =====
+                # # Show which mics are in the packet in order (before validation strips tags)
+                # tag_sequence = []
+                # tag_names = {0: "L", 1: "R", 2: "C"}
                 
-                try:
-                    raw_samples = np.frombuffer(data, dtype=np.int32)
-                    for sample_idx, sample in enumerate(raw_samples):
-                        tag = (sample >> 1) & 0x3
-                        tag_names_lookup = {0: "L", 1: "R", 2: "C", 3: "?"}
-                        tag_sequence.append(tag_names_lookup.get(tag, "?"))
+                # try:
+                #     raw_samples = np.frombuffer(data, dtype=np.int32)
+                #     for sample_idx, sample in enumerate(raw_samples):
+                #         tag = (sample >> 1) & 0x3
+                #         tag_names_lookup = {0: "L", 1: "R", 2: "C", 3: "?"}
+                #         tag_sequence.append(tag_names_lookup.get(tag, "?"))
                     
-                    if tag_sequence:
-                        first_tag = tag_sequence[0]
-                        last_tag = tag_sequence[-1]
-                        tag_string = "".join(tag_sequence)
-                        print(f"[TAG SEQUENCE] {tag_string}")
-                        print(f"[TAG ANALYSIS] First: {first_tag}, Last: {last_tag}, Total samples: {len(tag_sequence)}")
-                except Exception as e:
-                    print(f"[TAG SEQUENCE] Error extracting: {e}")
-                # ===== END TAG LOGGING =====
+                #     if tag_sequence:
+                #         first_tag = tag_sequence[0]
+                #         last_tag = tag_sequence[-1]
+                #         tag_string = "".join(tag_sequence)
+                #         print(f"[TAG SEQUENCE] {tag_string}")
+                #         print(f"[TAG ANALYSIS] First: {first_tag}, Last: {last_tag}, Total samples: {len(tag_sequence)}")
+                # except Exception as e:
+                #     print(f"[TAG SEQUENCE] Error extracting: {e}")
+                # # ===== END TAG LOGGING =====
                 
-                # ===== EXTRACT AND LOG TIMING INDEX SEQUENCE =====
-                # Show which timing indices are in the packet in order (before validation strips them)
-                timing_sequence = []
+                # # ===== EXTRACT AND LOG TIMING INDEX SEQUENCE =====
+                # # Show which timing indices are in the packet in order (before validation strips them)
+                # timing_sequence = []
                 
-                try:
-                    raw_samples = np.frombuffer(data, dtype=np.int32)
-                    for sample_idx, sample in enumerate(raw_samples):
-                        timing_idx = (sample >> 3) & 0x7  # Extract bits 3-5
-                        timing_sequence.append(str(timing_idx))
+                # try:
+                #     raw_samples = np.frombuffer(data, dtype=np.int32)
+                #     for sample_idx, sample in enumerate(raw_samples):
+                #         timing_idx = (sample >> 3) & 0x7  # Extract bits 3-5
+                #         timing_sequence.append(str(timing_idx))
                     
-                    if timing_sequence:
-                        first_timing = timing_sequence[0]
-                        last_timing = timing_sequence[-1]
-                        timing_string = "".join(timing_sequence)
-                        print(f"[TIMING SEQUENCE] {timing_string}")
-                        print(f"[TIMING ANALYSIS] First: {first_timing}, Last: {last_timing}, Total samples: {len(timing_sequence)}")
-                except Exception as e:
-                    print(f"[TIMING SEQUENCE] Error extracting: {e}")
-                # ===== END TIMING LOGGING =====
+                #     if timing_sequence:
+                #         first_timing = timing_sequence[0]
+                #         last_timing = timing_sequence[-1]
+                #         timing_string = "".join(timing_sequence)
+                #         print(f"[TIMING SEQUENCE] {timing_string}")
+                #         print(f"[TIMING ANALYSIS] First: {first_timing}, Last: {last_timing}, Total samples: {len(timing_sequence)}")
+                # except Exception as e:
+                #     print(f"[TIMING SEQUENCE] Error extracting: {e}")
+                # # ===== END TIMING LOGGING =====
                 
                 # Validate packet size: must be multiple of 12 bytes
                 # (3 channels × 4 bytes per 32-bit sample)
@@ -536,25 +536,25 @@ def udp_receiver_combined(port: int = 30000):
                 # Frame-level validation: process frame-by-frame and keep all valid frames
                 # Only frames with BOTH matching timing indices AND correct channel tags [0,1,2] are kept
                 cleaned_data, frames_kept, frames_discarded = _validate_and_strip_channel_tags(data)
-                print(f"\n[VALIDATED] {frames_kept} frames kept, {frames_discarded} frames discarded")
-                print(f"[CLEANED DATA] First 48 bytes (12 samples): {cleaned_data[:48].hex()}...")
+                # print(f"\n[VALIDATED] {frames_kept} frames kept, {frames_discarded} frames discarded")
+                # print(f"[CLEANED DATA] First 48 bytes (12 samples): {cleaned_data[:48].hex()}...")
                 
-                # Detailed validation summary
-                if frames_discarded > 0:
-                    if frames_discarded < 100:  # Avoid spam on huge frame losses
-                        print(f"[Frame Validation] STRICT mode: only frames with timing sync + channel tags [0,1,2] kept")
-                        print(f"[Frame Validation] Discarded: {frames_discarded} frames (timing mismatch or tag corruption)")
+                # # Detailed validation summary
+                # if frames_discarded > 0:
+                #     if frames_discarded < 100:  # Avoid spam on huge frame losses
+                #         print(f"[Frame Validation] STRICT mode: only frames with timing sync + channel tags [0,1,2] kept")
+                #         print(f"[Frame Validation] Discarded: {frames_discarded} frames (timing mismatch or tag corruption)")
                 
-                # Verify the cleaned data format
-                if frames_kept > 0:
-                    # Show which mics are present by sampling first frame
-                    first_frame_bytes = cleaned_data[:12] if len(cleaned_data) >= 12 else cleaned_data
-                    if len(first_frame_bytes) == 12:
-                        l_sample = int.from_bytes(first_frame_bytes[0:4], 'little', signed=True)
-                        r_sample = int.from_bytes(first_frame_bytes[4:8], 'little', signed=True)
-                        c_sample = int.from_bytes(first_frame_bytes[8:12], 'little', signed=True)
-                        print(f"[Data Integrity] First frame: L={l_sample:10d}, R={r_sample:10d}, C={c_sample:10d}")
-                        print(f"[Data Format] Buffer format: interleaved 3-channel [L0,R0,C0, L1,R1,C1, ...]")
+                # # Verify the cleaned data format
+                # if frames_kept > 0:
+                #     # Show which mics are present by sampling first frame
+                #     first_frame_bytes = cleaned_data[:12] if len(cleaned_data) >= 12 else cleaned_data
+                #     if len(first_frame_bytes) == 12:
+                #         l_sample = int.from_bytes(first_frame_bytes[0:4], 'little', signed=True)
+                #         r_sample = int.from_bytes(first_frame_bytes[4:8], 'little', signed=True)
+                #         c_sample = int.from_bytes(first_frame_bytes[8:12], 'little', signed=True)
+                #         print(f"[Data Integrity] First frame: L={l_sample:10d}, R={r_sample:10d}, C={c_sample:10d}")
+                #         print(f"[Data Format] Buffer format: interleaved 3-channel [L0,R0,C0, L1,R1,C1, ...]")
                 
                 # Update sample counts based on kept frames
                 num_frames = frames_kept
