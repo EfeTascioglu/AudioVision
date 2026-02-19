@@ -740,43 +740,23 @@ def index() -> Response:
           </div>
         </div>
 
-        <div class="section">
-          <h2>Packet History (Last 20)</h2>
-          <div class="log" id="log"></div>
-        </div>
-
         <script>
           let packetCount = 0;
-          let logEntries = [];
-          const maxLog = 20;
           let liveEnabled = false;
           let audioCtx = null;
           let eventSource = null;
           let nextPlayTime = 0;
-
-          function addLogEntry(data) {
-            const packet = data.packet || {};
-            const ts = packet.timestamp || '-';
-            const rms = packet.rms || [0, 0, 0];
-            const entry = `[${ts}] L: ${(rms[0] || 0).toFixed(0)} | R: ${(rms[1] || 0).toFixed(0)} | C: ${(rms[2] || 0).toFixed(0)}`;
-            logEntries.unshift(entry);
-            if (logEntries.length > maxLog) logEntries.pop();
-            
-            const logDiv = document.getElementById('log');
-            if (logDiv) {
-              logDiv.innerHTML = logEntries.map(e => `<div class="log-entry">${e}</div>`).join('');
-            }
-          }
 
           function updateRMS(rms, channels) {
             const rmsDiv = document.getElementById('rms');
             if (!rmsDiv) return;
             
             const labels = ['Left', 'Right', 'Mono'];
+            const MAX_32BIT = 2147483648;  // Max value for 32-bit signed int
+            
             rmsDiv.innerHTML = rms.map((val, i) => {
-                const normalized = val / 2147483648*2; // Normalize 32-bit RMS to [-1, 1]
-              const percent = Math.min(100, normalized); // Normalize to [0, 100]
-              console.log(`RMS Channel ${i}: ${val.toFixed(0)} (normalized: ${normalized.toFixed(3)}, percent: ${percent.toFixed(1)}%)`);
+              // Scale 0 to max 32-bit as 0 to 100%
+              const percent = Math.max(0, Math.min(100, (val / MAX_32BIT) * 100));
               return `
               <div class="rms-item">
                 <div class="rms-label">${labels[i] || 'Ch' + (i+1)}</div>
@@ -995,7 +975,6 @@ def index() -> Response:
               
               const rmsValues = packet.rms || [0, 0, 0];
               updateRMS(rmsValues, 3);
-              addLogEntry(data);
             } catch (e) {
               console.error('Fetch error:', e);
               document.getElementById('status').textContent = 'Error: ' + e.message;
