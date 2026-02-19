@@ -1,6 +1,12 @@
 import numpy as np
 from scipy.io import wavfile
 
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(ROOT))
+
 from sound_localization import find_delay
 from audio_util import visualize_waveforms
 from TDOA import tdoa_using_ls, tdoa_using_ls_2D, tdoa_using_grid_search, localize_sources_top3
@@ -73,8 +79,17 @@ def test_from_mono_audio(
         print(f"Source {i+1} (m): ({float(pos[0]):.4f}, {float(pos[1]):.4f}, {float(pos[2]):.4f})  strength: {strength:.4f}")
 
 
-def main(wav_path: str) -> None:
-    fs, data = wavfile.read(wav_path)
+def main(data, fs) -> None:
+    print(f"Running localize from audio \n")
+
+    #info = sf.info(wav_path)
+    #print(info)
+    #data, fs = sf.read(wav_path, always_2d=True)
+
+    print(f"shape after reading {data.shape}") 
+
+    # fs, data = wavfile.read(wav_path)
+    print(f"Shape of data{data.shape}")
     if data.ndim == 1:
         data = data[:, None]
     if np.issubdtype(data.dtype, np.integer):
@@ -83,6 +98,7 @@ def main(wav_path: str) -> None:
         data = data.astype(np.float64)
     channels = [data[:, i] for i in range(data.shape[1])]
 
+    print(f"Number of channels {data.shape[1]} \n")
     window_len = int(0.1 * fs)
     step = window_len // 2
     pair_delays_sec = []
@@ -99,6 +115,7 @@ def main(wav_path: str) -> None:
         for i, (pos, strength) in enumerate(sources):
             print(f"Source {i+1} (m): ({float(pos[0]):.4f}, {float(pos[1]):.4f}, {float(pos[2]):.4f})  strength: {strength:.4f}")
 
+    return pos
 
 if __name__ == "__main__":
     import sys
