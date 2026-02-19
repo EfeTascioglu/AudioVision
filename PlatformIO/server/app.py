@@ -18,6 +18,11 @@ from typing import Dict, Optional, Tuple
 import numpy as np
 from flask import Flask, Response, jsonify, request, send_file
 
+from typing import List
+
+from audio_transcription.whisper_live_kit.audio_main import run as run_audio_main
+
+
 app = Flask(__name__)
 
 # UDP settings
@@ -786,6 +791,107 @@ def reassemble_3channel_audio():
     interleaved_bytes = interleaved.astype(np.int32).tobytes()
     
     return interleaved_bytes, max_len
+
+
+@app.route("/api/process_latest", methods=["POST"])
+def api_process_latest() -> Response:
+    """
+    Run transcription + localization on the most recent audio in the 3 mic buffers.
+    Body (optional JSON):
+      {
+        "max_packets": 40,
+        "convert_to_int16": true
+      }
+    """
+    body = request.get_json(silent=True) or {}
+    max_packets = int(body.get("max_packets", 40))
+    convert_to_int16 = bool(body.get("convert_to_int16", True))
+
+    chunks = build_latest_3ch_chunks_from_buffers(
+        max_packets=max_packets,
+        convert_to_int16=convert_to_int16,
+    )
+
+    if not chunks:
+        return jsonify({"ok": False, "error": "No aligned audio available in buffers"}), 404
+
+    try:
+        # IMPORTANT: if you convert to int16 above, tell downstream bits=16 if you pass it
+        # (depends on how your engine_kwargs are used inside TranscriptionLocalizationSession).
+        segments = audio_main.run(
+            chunks=chunks,
+            num_channels=3,
+            # Example engine kwargs you might need (only if your stack uses them):
+            # sample_rate=48000,
+            # sample_width=2 if convert_to_int16 else 4,
+        )
+        return jsonify({"ok": True, "segments": segments, "num_chunks": len(chunks)})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+def _int32_3ch_to_int16_bytes(interleaved_i32: np.ndarray) -> bytes:
+    """
+    Convert interleaved int32 samples to int16.
+    Common for pipelines that assume 16-bit PCM.
+    """
+    # Scale: take the top 16 bits (fast) and clip to int16 range.
+    i16 = np.clip((interleaved_i32 >> 16), -32768, 32767).astype(np.int16)
+    return i16.tobytes()
+
+
+def build_latest_3ch_chunks_from_buffers(
+    *,
+    max_packets: int = 40,
+    convert_to_int16: bool = True,
+) -> List[bytes]:
+    """
+    Build multi-channel chunks suitable for audio_main.run(chunks, num_channels=3).
+
+    Each chunk corresponds to one 'packet time slice' assembled from mic0/mic1/mic2.
+    """
+    with audio_buffer_lock:
+        b0 = list(audio_buffer_mic0)
+        b1 = list(audio_buffer_mic1)
+        b2 = list(audio_buffer_mic2)
+
+    n = min(len(b0), len(b1), len(b2))
+    if n == 0:
+        return []
+
+    # take the most recent aligned packets
+    n_take = min(n, max_packets)
+    b0 = b0[-n_take:]
+    b1 = b1[-n_take:]
+    b2 = b2[-n_take:]
+
+    chunks: List[bytes] = []
+
+    for p0, p1, p2 in zip(b0, b1, b2):
+        s0 = np.frombuffer(p0, dtype=np.int32)
+        s1 = np.frombuffer(p1, dtype=np.int32)
+        s2 = np.frombuffer(p2, dtype=np.int32)
+
+        # Keep packets aligned by trimming to the shortest packet length
+        m = min(len(s0), len(s1), len(s2))
+        if m == 0:
+            continue
+        s0 = s0[:m]
+        s1 = s1[:m]
+        s2 = s2[:m]
+
+        interleaved = np.empty(m * 3, dtype=np.int32)
+        interleaved[0::3] = s0
+        interleaved[1::3] = s1
+        interleaved[2::3] = s2
+
+        if convert_to_int16:
+            chunks.append(_int32_3ch_to_int16_bytes(interleaved))
+        else:
+            chunks.append(interleaved.tobytes())
+
+    return chunks
+
 
 
 @app.route("/api/download_buffer")

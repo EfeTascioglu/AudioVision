@@ -6,13 +6,13 @@ import numpy as np
 
 import sys
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
 from sound_localization import find_delay
-from TDOA import tdoa_using_grid_search
+from TDOA import tdoa_using_grid_search, localize_sources_top3
 
 
 def main(
@@ -20,10 +20,10 @@ def main(
     sample_rate: int = 48000,
     num_channels: int = 3,
     bytes_per_sample: int = 2,
-) -> Optional[Tuple[float, float, float]]:
+) -> Optional[List[Tuple[Tuple[float, float, float], float]]]:
     """
     Run TDOA localization on interleaved multi-channel PCM bytes.
-    Returns (x, y, z) in meters when 3 channels are used; otherwise None.
+    Returns list of (position, strength) for top 3 sources when 3 channels; else None.
 
     Parameters
     ----------
@@ -36,40 +36,38 @@ def main(
     bytes_per_sample : int
         Bytes per sample (default 2 for int16).
     """
-    # Bytes -> int16 array
     dtype = np.int16
     n_bytes = len(pcm_bytes)
     n_samples_total = n_bytes // bytes_per_sample
     if n_samples_total * bytes_per_sample != n_bytes:
         raise ValueError(f"pcm_bytes length {n_bytes} is not a multiple of {bytes_per_sample}")
     samples = np.frombuffer(pcm_bytes, dtype=dtype)
-    # Reshape to (n_frames, num_channels)
     n_frames = n_samples_total // num_channels
     if n_frames * num_channels != n_samples_total:
         raise ValueError(
             f"Total samples {n_samples_total} is not divisible by num_channels={num_channels}"
         )
     data = samples.reshape(n_frames, num_channels)
-
-    # Normalize to float [-1, 1] (same as localize_from_audio_file.main)
     data = data.astype(np.float64) / np.iinfo(dtype).max
     channels = [data[:, i] for i in range(data.shape[1])]
 
     window_len = int(0.1 * sample_rate)
     step = window_len // 2
-    tdoa_sec = []
+    pair_delays_sec = []
+    pair_powers = []
     for i in range(len(channels) - 1):
-        delay_samp, delay_sec = find_delay(
+        delays_samp, delays_sec, powers = find_delay(
             channels[i], channels[i + 1], window_len, step, fs=sample_rate
         )
-        tdoa_sec.append(delay_sec)
-        print(f"Ch {i}–{i + 1}: {delay_samp} samples ({delay_sec * 1000:.2f} ms)")
-    if len(channels) == 3 and len(tdoa_sec) == 2:
-        pos, similarity = tdoa_using_grid_search(np.array(tdoa_sec))
-        position = (float(pos[0]), float(pos[1]), float(pos[2]))
-        print(f"Source position (m): {position[0]:.4f}, {position[1]:.4f}, {position[2]:.4f}")
-        print(f"Similarity: {similarity:.4f}")
-        return position
+        pair_delays_sec.append(delays_sec)
+        pair_powers.append(powers)
+        print(f"Ch {i}–{i + 1}: delays {delays_samp}  powers: {powers}")
+    if len(channels) == 3 and len(pair_delays_sec) == 2:
+        sources = localize_sources_top3(pair_delays_sec, pair_powers, loc_fn=tdoa_using_grid_search)
+        result = [((float(p[0]), float(p[1]), float(p[2])), s) for p, s in sources]
+        for i, (pos, strength) in enumerate(result):
+            print(f"Source {i+1} (m): ({pos[0]:.4f}, {pos[1]:.4f}, {pos[2]:.4f})  strength: {strength:.4f}")
+        return result
 
 
 if __name__ == "__main__":

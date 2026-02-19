@@ -1,6 +1,6 @@
 import numpy as np
 from scipy.optimize import least_squares
-from typing import Optional
+from typing import Optional, List, Tuple as Tup
 
 _DEFAULT_MICS = np.array([[0.0, 0.0, 0.0],
                           [-0.04, -0.08, 0.0],
@@ -119,7 +119,7 @@ def tdoa_using_grid_search(
     mic_positions: Optional[np.ndarray] = None,
     c: float = 343.0,
     distance: float = 1,
-    n_points: int = 360,
+    n_points: int = 36,
 ) -> tuple[np.ndarray, float]:
     """
     SRP-PHAT style: grid of candidate positions at z=0, x>0, radius=distance.
@@ -131,7 +131,7 @@ def tdoa_using_grid_search(
         raise ValueError(f"mic_positions must be (3,3), got {mics.shape}")
 
     # 9 points at z=0, x>0, on circle of radius distance (angles -90 to +90 deg in xy)
-    angles = np.linspace(-np.pi + np.pi/n_points, np.pi, n_points)
+    angles = np.linspace(-np.pi + np.pi/n_points * 2, np.pi, n_points)
     grid = np.column_stack([distance * np.cos(angles), distance * np.sin(angles), np.zeros(n_points)])
 
     m0, m1, m2 = mics
@@ -152,12 +152,46 @@ def tdoa_using_grid_search(
     return best_point, similarity
 
 
+def localize_sources_top3(
+    pair_delays_sec: List[np.ndarray],
+    pair_powers: List[np.ndarray],
+    loc_fn=None,
+    top_k: int = 3,
+    **loc_kw,
+) -> List[Tup[np.ndarray, float]]:
+    """
+    From per-pair top-2 delays (seconds) and powers, form combinations, localize each,
+    and return the top_k sources (position, strength). Strength combines powers (mean).
+    For 3 mics: 2 pairs, 2 candidates each → 4 TDOA vectors → localize 4, return top 3.
+    """
+    if loc_fn is None:
+        loc_fn = tdoa_using_grid_search
+    n_pairs = len(pair_delays_sec)
+    assert n_pairs == len(pair_powers)
+    # Each pair has 2 candidates (delays_sec[i], powers[i] length 2)
+    indices = [0, 1]  # top 2 per pair
+    from itertools import product
+    candidates = []
+    for choice in product(indices, repeat=n_pairs):
+        tdoa = np.array([pair_delays_sec[p][choice[p]] for p in range(n_pairs)])
+        strength = float(np.mean([pair_powers[p][choice[p]] for p in range(n_pairs)]))
+        try:
+            out = loc_fn(tdoa, **loc_kw)
+            pos = out[0] if isinstance(out, tuple) else out
+            pos = np.asarray(pos, dtype=float).ravel()
+            candidates.append((pos, strength))
+        except Exception:
+            continue
+    candidates.sort(key=lambda x: -x[1])
+    return candidates[:top_k]
+
+
 if __name__ == "__main__":
     c = 343.0
-    fs = 44200
+    fs = 48000
     mics = _DEFAULT_MICS
     n_mics = mics.shape[0]
-    source_true = np.array([-10.0, -5.2, 0])
+    source_true = np.array([1.2, 0.5, 0])
     
 
 
@@ -179,4 +213,22 @@ if __name__ == "__main__":
     angle_est = np.arctan2(float(pos[1]), float(pos[0]))
     error_rad = np.abs((angle_est - angle_true + np.pi) % (2 * np.pi) - np.pi)
     print("Angle error (deg):", np.degrees(error_rad))
+
+    # 2D plot (ignore z): green = true source, red = identified, blue = grid points
+    import matplotlib.pyplot as plt
+    n_points = 36
+    distance = 1.0
+    angles = np.linspace(-np.pi + (np.pi / n_points * 2), np.pi, n_points)
+    grid = np.column_stack([distance * np.cos(angles), distance * np.sin(angles), np.zeros(n_points)])
+    plt.figure(figsize=(8, 8))
+    plt.scatter(grid[:, 0], grid[:, 1], c="blue", s=5, label="Grid points")
+    plt.scatter(source_true[0], source_true[1], c="green", s=80, label="Audio Source", zorder=5)
+    plt.scatter(pos[0], pos[1], c="red", s=80, label="Identified", zorder=5)
+    plt.scatter(mics[:, 0], mics[:, 1], c="black", s=40, marker="x", label="Microphoness")
+    plt.title("Localization of Sound Source using TDOA grid point simulation")
+    plt.xlabel("x (m)")
+    plt.ylabel("y (m)")
+    plt.axis("equal")
+    plt.legend()
+    plt.show()
 
