@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import base64
 import io
 import json
@@ -11,9 +12,11 @@ import threading
 import time
 import urllib.request
 import wave
+
 from collections import deque
 from queue import Queue
 from typing import Dict, Optional, Tuple
+
 
 import numpy as np
 from flask import Flask, Response, jsonify, request, send_file
@@ -1275,6 +1278,51 @@ def api_download_buffer_text() -> Response:
             mimetype="text/csv",
             headers={"Content-Disposition": f"attachment; filename={filename}"}
         )
+
+@app.route("/api/buffer_to_local_wav")
+def api_buffer_to_local_wav() -> Response:
+    with audio_buffer_lock:
+        if len(audio_buffer) == 0:
+            return Response("No audio data buffered", status=404)
+        
+        # Concatenate all buffered chunks
+        combined = b"".join(audio_buffer)
+        
+        # Create WAV file in memory
+        wav_io = io.BytesIO()
+        
+        try:
+            with wave.open(wav_io, "wb") as wav_file:
+                wav_file.setnchannels(3)           # 3-channel mic array (mic0, mic1, mic2)
+                wav_file.setsampwidth(4)            # 32-bit = 4 bytes per sample
+                wav_file.setframerate(48000)        # ESP32 uses 48kHz
+                
+                # write interleaved bytes as unsigned.
+                unsigned_bytes = bytearray()
+                # for i in range(0, len(interleaved_bytes), 4):
+                #     sample = int.from_bytes(interleaved_bytes[i:i+4], "little", signed=True)
+                #     unsigned_sample = (sample + 2147483648)  # Convert signed to unsigned
+                #     unsigned_bytes.extend(unsigned_sample.to_bytes(4, "little", signed=False))
+                wav_file.writeframes(combined)
+            
+            wav_io.seek(0)
+            
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            filename = f"audio_{timestamp}_{buffer_bits}bit.wav"
+            
+            localdir = "serverwavs"
+            os.makedirs(localdir, exist_ok=True)
+            localpath = os.path.join(localdir, filename)
+            with open(localpath, "wb") as f:
+                f.write(wav_io.read())
+                
+            # Clear the buffer after saving to avoid duplicate saves
+            audio_buffer.clear()
+            
+            return Response(f"Saved WAV to {localpath}", status=200)
+        except Exception as e:
+            print(f"Error creating WAV: {e}")
+            return Response(f"Error creating WAV: {e}", status=500)
 
 
 @app.route("/api/buffer_diagnostics")

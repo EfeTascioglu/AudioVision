@@ -40,6 +40,9 @@ static const size_t FRAMES_PER_CHUNK = 512;
 static int32_t i2s0_raw[FRAMES_PER_CHUNK * 2];
 static int32_t i2s1_raw[FRAMES_PER_CHUNK];
 static int32_t pcm_out[FRAMES_PER_CHUNK * 3];
+static int32_t i2s0_mono[FRAMES_PER_CHUNK];  // Mono channel extraction buffer (moved from stack to avoid overflow)
+static int32_t i2s1_mono[FRAMES_PER_CHUNK];  // Mono channel extraction buffer (moved from stack to avoid overflow)
+// TODO: To optimize we can ignore these entirely and just pull from raw.
 
 // Diagnostics
 static bool ENABLE_TIMING_DIAGNOSTICS = true;  // Toggle this to enable/disable timing tracking
@@ -68,8 +71,9 @@ static volatile bool calibration_complete = false;  // Flag indicating calibrati
 // Calibration parameters
 static int CLAP_THRESHOLD = 21000000;  // Threshold for detecting loud peaks (will be set dynamically based on baseline)
 static const int MIN_CLAP_SPACING = 1500 ;  // ms
-static const int NUM_CLAPS_FOR_CALIBRATION = 5;  // Use 3-5 claps for averaging
-static const int MAX_OFFSET_SAMPLES = SAMPLE_RATE_HZ / 10;  // Max expected offset: 100ms
+static const int TRACKING_WINDOW_MS = 200;
+static const int NUM_CLAPS_FOR_CALIBRATION = 3;  // Use 3-5 claps for averaging
+static const int MAX_OFFSET_SAMPLES = SAMPLE_RATE_HZ / 10;  // Max expected offset: 50ms
 static const float CLAP_THRESHOLD_MULTIPLIER = 1.5f;  // Threshold is 1.5x baseline ambient volume
 static const unsigned long BASELINE_MEASUREMENT_TIME = 2000;  // Measure 2 seconds of ambient noise for baseline
 static int baseline_amplitude = 0;  // Measured baseline for diagnostics 
@@ -361,7 +365,7 @@ static int measure_baseline_volume() {
     // Find max amplitude in both channels
     for (size_t i = 0; i < frames; ++i) {
       int32_t sample0 = i2s0_raw[i * 2];  // Left channel of I2S0
-      int32_t sample1 = i2s1_raw[i * 2];  // Left channel of I2S1
+      int32_t sample1 = i2s1_raw[i];  // Left channel of I2S1
       
       int32_t abs_sample0 = sample0 > 0 ? sample0 : -sample0;
       int32_t abs_sample1 = sample1 > 0 ? sample1 : -sample1;
@@ -407,6 +411,15 @@ static void run_calibration() {
   unsigned long calibration_start = millis();
   const unsigned long CALIBRATION_TIMEOUT = 60000;  // 30 second timeout
 
+  // Track loudest peaks across multiple buffers during clap detection
+  int32_t i2s0_loudest_val = 0;
+  long i2s0_loudest_index = 0;
+  int32_t i2s1_loudest_val = 0;
+  long i2s1_loudest_index = 0;
+  size_t buffer_count = 0;
+  bool tracking_clap = false;
+  unsigned long tracking_start = 0;
+
   while (clap_count < NUM_CLAPS_FOR_CALIBRATION) {
     if (millis() - calibration_start > CALIBRATION_TIMEOUT) {
       Serial.println("Calibration timeout. Using default offset of 0.");
@@ -430,12 +443,10 @@ static void run_calibration() {
 
     size_t frames = FRAMES_PER_CHUNK;
 
-    // Extract channels and find peaks
-    int32_t i2s0_mono[FRAMES_PER_CHUNK];
-    int32_t i2s1_mono[FRAMES_PER_CHUNK];
+    // Extract channels and find peaks (using global buffers to avoid stack overflow)
     for (size_t i = 0; i < frames; ++i) {
       i2s0_mono[i] = i2s0_raw[i * 2];  // Left channel of I2S0
-      i2s1_mono[i] = i2s1_raw[i * 2];  // Left channel of I2S1
+      i2s1_mono[i] = i2s1_raw[i];  // Left channel of I2S1
     }
 
     // Find peaks in this buffer
@@ -444,22 +455,61 @@ static void run_calibration() {
     int32_t peak0_val = i2s0_mono[peak0_idx] > 0 ? i2s0_mono[peak0_idx] : -i2s0_mono[peak0_idx];
     int32_t peak1_val = i2s1_mono[peak1_idx] > 0 ? i2s1_mono[peak1_idx] : -i2s1_mono[peak1_idx];
 
-    // Check if we detected a loud peak and it's been long enough since the last one
-    if ((peak0_val > CLAP_THRESHOLD || peak1_val > CLAP_THRESHOLD) &&
+    // Check if we should start tracking a new clap
+    if (!tracking_clap && (peak0_val > CLAP_THRESHOLD || peak1_val > CLAP_THRESHOLD) &&
         (millis() - last_peak_time > MIN_CLAP_SPACING)) {
+      // Start tracking this clap across buffers
+      tracking_clap = true;
+      tracking_start = millis();
+      buffer_count = 0;
       
-      // Calculate relative offset between the two channels' peaks
-      // Positive offset means I2S1 lags I2S0
-      int offset = static_cast<int>(peak1_idx) - static_cast<int>(peak0_idx);
-      peak_offsets[clap_count] = offset;
+      // Initialize with current buffer's peaks
+      i2s0_loudest_val = peak0_val;
+      i2s0_loudest_index = peak0_idx;
+      i2s1_loudest_val = peak1_val;
+      i2s1_loudest_index = peak1_idx;
       
-      Serial.printf("*** CLAP %d DETECTED ***\n", clap_count + 1);
-      Serial.printf("I2S0 peak: %d @sample %zu\n", peak0_val, peak0_idx);
-      Serial.printf("I2S1 peak: %d @sample %zu\n", peak1_val, peak1_idx);
-      Serial.printf("Offset: %d samples (%.2f ms)\n\n", offset, (float)offset * 1000.0f / SAMPLE_RATE_HZ);
+      Serial.printf("*** CLAP %d TRACKING STARTED ***\n", clap_count + 1);
+      Serial.printf("Initial peaks: I2S0=%d @%ld, I2S1=%d @%ld\n", 
+                    peak0_val, i2s0_loudest_index, peak1_val, i2s1_loudest_index);
+    }
+    
+    // If we're tracking a clap, update loudest peaks if current buffer has louder ones
+    if (tracking_clap) {
+      buffer_count++;
       
-      clap_count++;
-      last_peak_time = millis();
+      // Update I2S0 loudest if this buffer has a louder peak
+      if (peak0_val > i2s0_loudest_val) {
+        i2s0_loudest_val = peak0_val;
+        i2s0_loudest_index = buffer_count * FRAMES_PER_CHUNK + peak0_idx;
+        Serial.printf("  New I2S0 peak: %d @%ld\n", peak0_val, i2s0_loudest_index);
+      }
+      
+      // Update I2S1 loudest if this buffer has a louder peak
+      if (peak1_val > i2s1_loudest_val) {
+        i2s1_loudest_val = peak1_val;
+        i2s1_loudest_index = buffer_count * FRAMES_PER_CHUNK + peak1_idx;
+        Serial.printf("  New I2S1 peak: %d @%ld\n", peak1_val, i2s1_loudest_index);
+      }
+
+      if (millis() - tracking_start > TRACKING_WINDOW_MS) {
+        // Calculate offset using the absolute loudest peaks found
+        int offset = static_cast<int>(i2s1_loudest_index - i2s0_loudest_index);
+        peak_offsets[clap_count] = offset;
+        
+        Serial.printf("*** CLAP %d COMPLETE ***\n", clap_count + 1);
+        Serial.printf("I2S0 loudest: %d @sample %ld\n", i2s0_loudest_val, i2s0_loudest_index);
+        Serial.printf("I2S1 loudest: %d @sample %ld\n", i2s1_loudest_val, i2s1_loudest_index);
+        Serial.printf("Offset: %d samples (%.2f ms)\n\n", offset, (float)offset * 1000.0f / SAMPLE_RATE_HZ);
+        
+        if (abs((float)offset * 1000.0f / SAMPLE_RATE_HZ) > 10.0f) {
+          clap_count++;
+        } else {
+          Serial.println("  Offset not within expectation. Ignoring clap. ");
+        }
+        last_peak_time = millis();
+        tracking_clap = false;
+      }
     } else if (peak0_val > CLAP_THRESHOLD || peak1_val > CLAP_THRESHOLD) {
       // Peak detected but too soon after last one - show info
       float time_since_last = (float)(millis() - last_peak_time) / 1000.0f;
