@@ -68,7 +68,8 @@ namespace PassthroughCameraSamples.MultiObjectDetection
 
             OnObjectsDetected?.Invoke(detections.Count);
 
-            var positionLog = new List<Vector3>();
+            var positionLog = new List<Vector3>();          // position vectors: world space
+            var headsetPositionLog = new List<Vector3>();   // position vectors: headset frame
 
             // Draw the bounding boxes
             for (var i = 0; i < detections.Count; i++)
@@ -132,14 +133,23 @@ namespace PassthroughCameraSamples.MultiObjectDetection
                 boxRectTransform.sizeDelta = size;
                 boxData.lastUpdateTime = Time.time;
 
-                if (m_logPositionVectors)
+                if (m_logPositionVectors) // log the position vectors of the faces to log
+                {
                     positionLog.Add(worldSpaceCenter);
+                    // Headset frame: origin at headset, Z forward, Y up, X right
+                    var relativeToHeadset = worldSpaceCenter - cameraPose.position;
+                    var local = Quaternion.Inverse(cameraPose.rotation) * relativeToHeadset;
+                    var headsetFrame = new Vector3(local.x, local.y, local.z); // X right, Y up, Z forward
+                    headsetPositionLog.Add(headsetFrame);
+                }
             }
-
+            // Log the position vectors of the faces to the log
             if (m_logPositionVectors && positionLog.Count > 0)
             {
                 for (int k = 0; k < positionLog.Count; k++)
-                    Debug.Log($"[FaceDetection] Face {k} position (x,y,z): ({positionLog[k].x:F3}, {positionLog[k].y:F3}, {positionLog[k].z:F3})");
+                {
+                    Debug.Log($"[FaceDetection] Face {k} world (x,y,z): ({positionLog[k].x:F3}, {positionLog[k].y:F3}, {positionLog[k].z:F3}) | headset (X right, Y up, Z fwd): ({headsetPositionLog[k].x:F3}, {headsetPositionLog[k].y:F3}, {headsetPositionLog[k].z:F3})");
+                }
             }
         }
 
