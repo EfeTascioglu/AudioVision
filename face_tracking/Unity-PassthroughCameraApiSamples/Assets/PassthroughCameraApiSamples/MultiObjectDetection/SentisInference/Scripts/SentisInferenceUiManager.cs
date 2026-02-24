@@ -17,6 +17,7 @@ namespace PassthroughCameraSamples.MultiObjectDetection
         [SerializeField] private PassthroughCameraAccess m_cameraAccess;
 
         [SerializeField] private RectTransform m_detectionBoxPrefab;
+        [SerializeField] private bool m_logPositionVectors; // for activating logging of position vectors 
         [Space(10)]
         public UnityEvent<int> OnObjectsDetected;
 
@@ -66,6 +67,8 @@ namespace PassthroughCameraSamples.MultiObjectDetection
             }
 
             OnObjectsDetected?.Invoke(detections.Count);
+
+            var positionLog = new List<Vector3>();
 
             // Draw the bounding boxes
             for (var i = 0; i < detections.Count; i++)
@@ -128,6 +131,15 @@ namespace PassthroughCameraSamples.MultiObjectDetection
                 boxRectTransform.SetPositionAndRotation(worldSpaceCenter, Quaternion.LookRotation(normal));
                 boxRectTransform.sizeDelta = size;
                 boxData.lastUpdateTime = Time.time;
+
+                if (m_logPositionVectors)
+                    positionLog.Add(worldSpaceCenter);
+            }
+
+            if (m_logPositionVectors && positionLog.Count > 0)
+            {
+                for (int k = 0; k < positionLog.Count; k++)
+                    Debug.Log($"[FaceDetection] Face {k} position (x,y,z): ({positionLog[k].x:F3}, {positionLog[k].y:F3}, {positionLog[k].z:F3})");
             }
         }
 

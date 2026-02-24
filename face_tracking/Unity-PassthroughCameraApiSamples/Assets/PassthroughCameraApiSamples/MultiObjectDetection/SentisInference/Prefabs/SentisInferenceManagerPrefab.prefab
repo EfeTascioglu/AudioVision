@@ -147,6 +147,7 @@ MonoBehaviour:
   m_environmentRaycast: {fileID: 0}
   m_cameraAccess: {fileID: 0}
   m_detectionBoxPrefab: {fileID: 5646078222565903388}
+  m_logPositionVectors: 1
   OnObjectsDetected:
     m_PersistentCalls:
       m_Calls:
