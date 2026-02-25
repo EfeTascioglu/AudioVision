@@ -42,6 +42,7 @@ static int32_t i2s1_raw[FRAMES_PER_CHUNK];
 static int32_t pcm_out[FRAMES_PER_CHUNK * 3];
 static int32_t i2s0_mono[FRAMES_PER_CHUNK];  // Mono channel extraction buffer (moved from stack to avoid overflow)
 static int32_t i2s1_mono[FRAMES_PER_CHUNK];  // Mono channel extraction buffer (moved from stack to avoid overflow)
+static int32_t discard_buffer[FRAMES_PER_CHUNK];
 // TODO: To optimize we can ignore these entirely and just pull from raw.
 
 // Diagnostics
@@ -67,6 +68,12 @@ static unsigned long i2s0_read_interval_ms = 0;  // Time between successful I2S0
 // Manual Offset Calibration
 static int i2s1_sample_offset = 0; // Sample offset for I2S1 channel to align with I2S0
 static volatile bool calibration_complete = false;  // Flag indicating calibration done
+
+// Manual Calibration Mode
+static volatile bool manual_calibration_mode = false;  // Flag to enter manual calibration mode (stops transmission)
+static volatile int manual_discard_i2s0_samples = 0;   // Number of samples to discard from I2S0 buffer
+static volatile int manual_discard_i2s1_samples = 0;   // Number of samples to discard from I2S1 buffer
+static volatile int manual_buffer_offset_adjustment = 0;  // Additional offset to apply (can be negative)
 
 // Calibration parameters
 static int CLAP_THRESHOLD = 21000000;  // Threshold for detecting loud peaks (will be set dynamically based on baseline)
@@ -389,7 +396,116 @@ static int measure_baseline_volume() {
   return max_amplitude;
 }
 
-// Calibration sequence: listen for claps and measure timing drift
+
+// Handle serial commands for manual calibration
+static void handle_serial_command() {
+  // If not in calibration mode, only process if data is explicitly available (non-blocking)
+  if (!manual_calibration_mode && Serial.available() == 0) {
+    return;
+  }
+  
+  // Even in calibration mode, check if data is available (Arduino doesn't support true blocking)
+  if (Serial.available() == 0) {
+    return;
+  }
+  
+  String cmd = Serial.readStringUntil('\n');
+  cmd.trim();
+  
+  if (cmd.length() == 0) {
+    return;
+  }
+  
+  // Parse command format: COMMAND [arg1] [arg2]
+  if (cmd.equals("CAL")) {
+    // Enter manual calibration mode
+    manual_calibration_mode = true;
+    manual_discard_i2s0_samples = 0;
+    manual_discard_i2s1_samples = 0;
+    manual_buffer_offset_adjustment = 0;
+    Serial.println("[MANUAL_CAL] Entering manual calibration mode. Transmission PAUSED.");
+    Serial.println("[MANUAL_CAL] Available commands:");
+    Serial.println("[MANUAL_CAL]   D0 <samples>  - Discard N samples from I2S0 buffer");
+    Serial.println("[MANUAL_CAL]   D1 <samples>  - Discard N samples from I2S1 buffer");
+    Serial.println("[MANUAL_CAL]   TEST          - Send one chunk and exit calibration to test alignment");
+    Serial.println("[MANUAL_CAL]   OK            - Apply settings and resume streaming");
+    Serial.println("[MANUAL_CAL]   CANCEL        - Discard changes and resume streaming");
+    Serial.println("[MANUAL_CAL]   STATUS        - Show current calibration settings");
+  }
+  else if (manual_calibration_mode) {
+    // Process calibration commands
+    if (cmd.startsWith("D0")) {
+      int samples = cmd.substring(2).toInt();
+      manual_discard_i2s0_samples = samples;
+      Serial.printf("[MANUAL_CAL] I2S0 discard amount set to %d samples (%.3f ms)\n", 
+                    samples, (float)samples * 1000.0 / SAMPLE_RATE_HZ);
+    }
+    else if (cmd.startsWith("D1")) {
+      int samples = cmd.substring(2).toInt();
+      manual_discard_i2s1_samples = samples;
+      Serial.printf("[MANUAL_CAL] I2S1 discard amount set to %d samples (%.3f ms)\n", 
+                    samples, (float)samples * 1000.0 / SAMPLE_RATE_HZ);
+    }
+    else if (cmd.equals("TEST")) {
+      // Temporarily exit calibration to send one test chunk
+      Serial.println("[MANUAL_CAL] Sending test chunk with current settings...");
+      manual_calibration_mode = false;
+      delay(100);  // Allow one loop iteration to send
+      delay(100);  // Wait a bit
+      manual_calibration_mode = true;
+      Serial.println("[MANUAL_CAL] Test chunk sent. Resume calibration mode.");
+    }
+    else if (cmd.equals("OK")) {
+      // Apply settings and resume normal streaming
+      int bytes_to_discard = (manual_discard_i2s0_samples > 0) ? 
+                      min((size_t)manual_discard_i2s0_samples * sizeof(int32_t), sizeof(discard_buffer)) : 0; 
+      size_t bytes_read = 0;
+      if (manual_discard_i2s0_samples > 0){
+        i2s_read(I2S_NUM_0, discard_buffer, bytes_to_discard, &bytes_read, 1000);
+        int samples_discarded = bytes_read / sizeof(int32_t);
+      }
+      else if (manual_discard_i2s1_samples > 0){
+        i2s_read(I2S_NUM_1, discard_buffer, bytes_to_discard, &bytes_read, 1000);
+        int samples_discarded = bytes_read / sizeof(int32_t);
+      }
+      Serial.println("[MANUAL_CAL] Settings applied!");
+      Serial.printf("[MANUAL_CAL] Final offset: I2S0=%d samples, I2S1=%d samples, Net offset=%d\n",
+                    manual_discard_i2s0_samples, manual_discard_i2s1_samples, i2s1_sample_offset);
+      manual_calibration_mode = false;
+      Serial.println("[MANUAL_CAL] Resuming normal audio streaming.");
+    }
+    else if (cmd.equals("CANCEL")) {
+      // Exit without applying changes
+      manual_calibration_mode = false;
+      manual_discard_i2s0_samples = 0;
+      manual_discard_i2s1_samples = 0;
+      Serial.println("[MANUAL_CAL] Cancelled. Resuming normal audio streaming.");
+    }
+    else if (cmd.equals("STATUS")) {
+      // Show current settings
+      Serial.println("[MANUAL_CAL] === Current Settings ===");
+      Serial.printf("[MANUAL_CAL] I2S0 discard: %d samples (%.3f ms)\n", 
+                    manual_discard_i2s0_samples, (float)manual_discard_i2s0_samples * 1000.0 / SAMPLE_RATE_HZ);
+      Serial.printf("[MANUAL_CAL] I2S1 discard: %d samples (%.3f ms)\n", 
+                    manual_discard_i2s1_samples, (float)manual_discard_i2s1_samples * 1000.0 / SAMPLE_RATE_HZ);
+      Serial.printf("[MANUAL_CAL] Resulting offset: %d samples\n", 
+                    manual_discard_i2s1_samples - manual_discard_i2s0_samples);
+    }
+    else {
+      Serial.println("[MANUAL_CAL] Unknown command. Type 'STATUS' to see current settings.");
+    }
+  }
+  else {
+    // Not in manual calibration mode - other commands can go here
+    if (cmd.equals("CAL")) {
+      // Already handled above
+    }
+    else {
+      Serial.printf("[UNKNOWN] Unknown command: %s\n", cmd.c_str());
+    }
+  }
+}
+// Calibration sequence: listen for claps on startup and measure timing drift
 static void run_calibration() {
   Serial.println("\n=== STARTING CALIBRATION SEQUENCE ===");
   
@@ -555,7 +671,6 @@ static void run_calibration() {
     Serial.printf("Aligning channels: discarding %d samples from I2S1...\n", i2s1_sample_offset);
     
     int samples_to_discard = i2s1_sample_offset;
-    int32_t discard_buffer[FRAMES_PER_CHUNK];
     
     while (samples_to_discard > 0) {
       size_t bytes_to_read = (samples_to_discard > FRAMES_PER_CHUNK) ? 
@@ -623,6 +738,9 @@ void setup() {
 }
 
 void loop() {
+  // Handle serial commands (including manual calibration mode entry)
+  handle_serial_command();
+  
   // Wait for calibration to complete
   if (!calibration_complete) {
     delay(100);
@@ -705,9 +823,22 @@ void loop() {
   }
 
   for (size_t i = 0; i < frames; ++i) {
-    int32_t left0 = convert_sample(i2s0_raw[i * 2]);
-    int32_t right0 = convert_sample(i2s0_raw[i * 2 + 1]);
-    int32_t center = convert_sample(i2s1_raw[i]);  
+    // Apply manual calibration offsets: skip leading samples from specified buffers
+    size_t i2s0_idx = i + manual_discard_i2s0_samples;
+    size_t i2s1_idx = i + manual_discard_i2s1_samples;
+    
+    // Bounds check to avoid reading beyond buffer
+    if (i2s0_idx >= frames || i2s1_idx >= frames) {
+      // If we've run out of valid samples due to discarding, pad with zeros
+      pcm_out[i * 3] = 0;
+      pcm_out[i * 3 + 1] = 0;
+      pcm_out[i * 3 + 2] = 0;
+      continue;
+    }
+    
+    int32_t left0 = convert_sample(i2s0_raw[i2s0_idx * 2]);
+    int32_t right0 = convert_sample(i2s0_raw[i2s0_idx * 2 + 1]);
+    int32_t center = convert_sample(i2s1_raw[i2s1_idx]);  
 
     // Tag each sample with channel ID and timing index
     // Channel IDs: 0=MIC0Left, 1=MIC0Right, 2=MIC1Center
@@ -736,10 +867,15 @@ void loop() {
   total_frames_captured += frames;
   chunk_count++;
   
-  // CRITICAL: Send all 3 channels in a SINGLE atomic UDP packet
-  // Packet format (interleaved): [L, R, C, L, R, C, ...]
-  // This ensures all 3 channels arrive together on the server, eliminating timing skew
-  bool ok = send_udp_combined(udp_combined, UDP_PORT_COMBINED, pcm_out, frames);
+  // CRITICAL: Only send if NOT in manual calibration mode
+  if (!manual_calibration_mode) {
+    // CRITICAL: Send all 3 channels in a SINGLE atomic UDP packet
+    // Packet format (interleaved): [L, R, C, L, R, C, ...]
+    // This ensures all 3 channels arrive together on the server, eliminating timing skew
+    bool ok = send_udp_combined(udp_combined, UDP_PORT_COMBINED, pcm_out, frames);
+  } else {
+    // In manual calibration mode, skip transmission
+  }
 
   // send_audio_to_serial();
   
@@ -767,6 +903,11 @@ void loop() {
       Serial.printf("*** TEST MODE ACTIVE ***\n");
       Serial.printf("Test frequency: %.1f Hz (Sine on Left, Square on Right, Triangle on Center)\n", TEST_FREQUENCY_HZ);
       Serial.printf("Global phase index: %zu samples\n", test_phase_index);
+    }
+    if (manual_calibration_mode) {
+      Serial.printf("*** MANUAL CALIBRATION MODE ACTIVE ***\n");
+      Serial.printf("I2S0 discard: %d samples, I2S1 discard: %d samples\n", 
+                    manual_discard_i2s0_samples, manual_discard_i2s1_samples);
     }
     Serial.printf("Chunks captured: %d\n", chunk_count);
     Serial.printf("Total frames: %lu (%.2f sec of audio)\n", total_frames_captured, audio_duration_sec);
