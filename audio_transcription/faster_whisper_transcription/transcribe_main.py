@@ -37,7 +37,7 @@ def get_oldest_wav(directory: str) -> str | None:
 
 
 # -----------------------------
-# WAV → RAW conversion
+# WAV -> RAW conversion
 # -----------------------------
 def convert_wav_to_raw(wav_path: str, raw_path: str = "audio.raw") -> tuple[np.ndarray, int]:
     """

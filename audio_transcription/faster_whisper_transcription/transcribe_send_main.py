@@ -92,6 +92,10 @@ def initilaize_model() -> WhisperModel:
     model = WhisperModel("small", device="cpu", compute_type="int8") 
     return model 
 
+
+# -----------------------------
+# Audio Processing + Server
+# -----------------------------
 queue = asyncio.Queue()
 
 
@@ -128,6 +132,7 @@ async def process_wavs(whisper_model, directory: str):
 
 
 async def ws_handler(websocket, path):
+    """Connection handler for websocket"""
     while True:
         # Wait for new JSON from queue
         output_json = await queue.get()
@@ -139,9 +144,9 @@ async def main_async():
     directory = "./wav_queue"
 
     # Run WAV processing and WebSocket server concurrently
-    server = websockets.serve(ws_handler, "0.0.0.0", 8765)
+    server = websockets.serve(ws_handler, "0.0.0.0", 8765) # init a WebSocket Server in python
 
-    await asyncio.gather(
+    await asyncio.gather(   # gather -> run concurrently in the event loop so the processing of the wavs and the server is running concurrently
         process_wavs(whisper_model, directory),
         server
     )
